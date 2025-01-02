@@ -8,16 +8,28 @@ const app = express();
 app.use(express.json());
 const prisma = new PrismaClient();
 
+const generateEmbeddings = await pipeline(
+  "feature-extraction",
+  "Xenova/all-MiniLM-L6-v2"
+);
+
+const getEmbedding = async (text: string) => {
+  const output1 = await generateEmbeddings(text, {
+    pooling: "mean",
+    normalize: true,
+  });
+
+  return Array.from(output1.data);
+};
+
 function formatArrayForVector(arr: number[]): string {
-  return `[${arr.join(',')}]`;
+  return `[${arr.join(",")}]`;
 }
 
 app.post("/", async (req, res) => {
   const { id, content } = req.body;
   const temp = await getEmbedding(content);
-  const data = await formatArrayForVector(temp)
-
-  // console.log('temp', temp)
+  const data = await formatArrayForVector(temp);
 
   // const vectorEmbedding = JSON.stringify(temp);
 
@@ -30,58 +42,40 @@ app.post("/", async (req, res) => {
   // Fetch the created document
   let createdDoc: any;
   createdDoc = await prisma.$queryRaw`
- SELECT id, content, "createdAt"
- FROM "Document"
- WHERE content = ${content}
- ORDER BY id DESC
- LIMIT 1
-`;
-
-  console.log("temp", createdDoc[0]);
+    SELECT id, content, "createdAt"
+    FROM "Document"
+    WHERE content = ${content}
+    ORDER BY id DESC
+    LIMIT 1
+    `;
 
   res.status(201).json({
     data: createdDoc[0],
   });
 });
 
-const generateEmbeddings = await pipeline(
-  "feature-extraction",
-  "Xenova/all-MiniLM-L6-v2"
-);
+app.get("/", async (req, res) => {
+  const { content } = req.body;
 
-function dotProduct(a: number[], b: number[]) {
-  if (a.length !== b.length) {
-    throw new Error("Both arguments must have the same length");
-  }
+  const embedding = await getEmbedding(content);
+  const arrayLiteral = formatArrayForVector(embedding)
 
-  let result = 0;
+  const results = await prisma.$queryRaw`
+  SELECT 
+    id, 
+    content, 
+    1 - (embedding <=> ${arrayLiteral}::vector(384)) as similarity
+  FROM "Document"
+  WHERE 1 - (embedding <=> ${arrayLiteral}::vector(384)) > 0.8
+  ORDER BY similarity DESC
+  LIMIT 5
+`;
 
-  for (let i = 0; i < a.length; i++) {
-    result += a[i] * b[i];
-  }
+console.log('result', results)
 
-  return result;
-}
 
-const getEmbedding = async (text: string) => {
-  const output1 = await generateEmbeddings(text, {
-    pooling: "mean",
-    normalize: true,
-  });
+});
 
-  return Array.from(output1.data);
-};
-
-// const output2 = await generateEmbeddings("That is a happy person", {
-//   pooling: "mean",
-//   normalize: true,
-// });
-
-//@ts-ignore
-// const similarity = dotProduct(output1.data, output2.data);
-
-// console.log(similarity);
-
-app.listen(3000, () => {
+app.listen(3001, () => {
   console.log("server started");
 });
