@@ -8,22 +8,22 @@ const app = express();
 app.use(express.json());
 const prisma = new PrismaClient();
 
+function formatArrayForVector(arr: number[]): string {
+  return `[${arr.join(',')}]`;
+}
+
 app.post("/", async (req, res) => {
   const { id, content } = req.body;
   const temp = await getEmbedding(content);
+  const data = await formatArrayForVector(temp)
 
-  console.log('temp', temp)
+  // console.log('temp', temp)
 
-  const vectorEmbedding = JSON.stringify(temp);
-
-  console.log('vector', vectorEmbedding)
-
-  // Insert embeddings into DB
-  // await prisma.$executeRaw`INSERT INTO "Document" (vector) VALUES (${vectorEmbedding}::vector)`;
+  // const vectorEmbedding = JSON.stringify(temp);
 
   const result = await prisma.$executeRaw`
   INSERT INTO "Document" (id, content, embedding) 
-  VALUES (${id},${content},${vectorEmbedding}::vector)
+  VALUES (${id},${content},${data}::vector)
 `;
   console.log("result", result);
 
