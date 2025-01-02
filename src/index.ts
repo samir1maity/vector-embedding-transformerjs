@@ -10,19 +10,38 @@ const prisma = new PrismaClient();
 
 app.post("/", async (req, res) => {
   const { id, content } = req.body;
-  const temp = await prisma.document.create({
-    data: {
-      id,
-      content,
-    },
-  });
+  const temp = await getEmbedding(content);
 
-  console.log("temp", temp);
+  console.log('temp', temp)
+
+  const vectorEmbedding = JSON.stringify(temp);
+
+  console.log('vector', vectorEmbedding)
+
+  // Insert embeddings into DB
+  // await prisma.$executeRaw`INSERT INTO "Document" (vector) VALUES (${vectorEmbedding}::vector)`;
+
+  const result = await prisma.$executeRaw`
+  INSERT INTO "Document" (id, content, embedding) 
+  VALUES (${id},${content},${vectorEmbedding}::vector)
+`;
+  console.log("result", result);
+
+  // Fetch the created document
+  let createdDoc: any;
+  createdDoc = await prisma.$queryRaw`
+ SELECT id, content, "createdAt"
+ FROM "Document"
+ WHERE content = ${content}
+ ORDER BY id DESC
+ LIMIT 1
+`;
+
+  console.log("temp", createdDoc[0]);
 
   res.status(201).json({
-    temp,
+    data: createdDoc[0],
   });
-
 });
 
 const generateEmbeddings = await pipeline(
@@ -44,20 +63,14 @@ function dotProduct(a: number[], b: number[]) {
   return result;
 }
 
-const getEmbeddinf = async () => {
-  const output1 = await generateEmbeddings("That is a happy person", {
+const getEmbedding = async (text: string) => {
+  const output1 = await generateEmbeddings(text, {
     pooling: "mean",
     normalize: true,
   });
 
-  return Array.from(output1.data)
-}
-
-
-
-
-
-
+  return Array.from(output1.data);
+};
 
 // const output2 = await generateEmbeddings("That is a happy person", {
 //   pooling: "mean",
